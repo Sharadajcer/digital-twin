@@ -1,0 +1,465 @@
+<?php
+// digital_twin_all_in_one.php
+// Single-file dashboard: simulation + combined chart + 3D windmill + prediction + alert
+?>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Digital Twin — All-in-One (Windmill)</title>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- Three.js -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+
+<style>
+  :root{
+    --bg1:#071126; --bg2:#08243a; --card:#0f1724; --accent:#00d4ff; --safe:#00c853; --warn:#ffb300; --danger:#ff3b30;
+    --glass: rgba(255,255,255,0.03);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui, -apple-system, "Poppins", "Helvetica Neue", Arial;}
+  body{
+    background: linear-gradient(180deg,var(--bg1),var(--bg2));
+    color:#e6f0ff; display:flex; align-items:flex-start; justify-content:center; padding:24px;
+  }
+  .app{
+    width:1100px; max-width:98vw; background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:14px; padding:18px; box-shadow: 0 10px 40px rgba(2,6,23,0.6); overflow:hidden;
+  }
+
+  header{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .title {display:flex; gap:12px; align-items:center;}
+  .logo {
+    width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#7efcff);display:flex;align-items:center;justify-content:center;color:#041225;font-weight:700;font-size:20px;
+    box-shadow: 0 6px 18px rgba(0,212,255,0.08), inset 0 -6px 20px rgba(255,255,255,0.02);
+  }
+  h1{margin:0;font-size:20px; color:var(--accent);}
+  p.sub{margin:0;color:#9fb7d0;font-size:13px;}
+
+  .top-row{display:flex; gap:18px; margin-top:16px;}
+  .left-col{width:60%; min-width:360px;}
+  .right-col{width:40%; min-width:260px; display:flex;flex-direction:column; gap:14px;}
+
+  .card{background:var(--card); border-radius:12px; padding:12px; box-shadow: 0 6px 20px rgba(3,10,30,0.6);}
+
+  /* stats */
+  .stats{display:flex; gap:10px; margin-bottom:8px;}
+  .stat{flex:1; padding:12px; border-radius:10px; background:var(--glass); display:flex;flex-direction:column; align-items:flex-start; gap:6px;}
+  .stat .label{font-size:12px;color:#9fb7d0;}
+  .stat .val{font-size:18px;font-weight:700;}
+
+  /* chart container */
+  #chartWrap{height:340px; padding:10px; border-radius:10px; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));}
+
+  /* 3D container */
+  #threeWrap{height:340px; display:flex; align-items:center; justify-content:center; border-radius:10px; background:linear-gradient(180deg, rgba(0,0,0,0.03), rgba(255,255,255,0.01));}
+
+  /* prediction */
+  .predictionBar{height:16px; background:#0b1220; border-radius:999px; overflow:hidden; margin-top:8px;}
+  .predictionFill{height:100%; width:0%; background:linear-gradient(90deg,var(--accent),#7efcff); transition: width 600ms ease, background 400ms ease; }
+
+  .predictionLabel{display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:8px; font-size:13px;}
+
+  /* alert overlay popup */
+  .dangerOverlay{
+    position:fixed; inset:0; display:none; align-items:center; justify-content:center; z-index:9999;
+    background: linear-gradient(90deg, rgba(0,0,0,0.25), rgba(0,0,0,0.6));
+  }
+  .dangerBox{
+    width:420px; max-width:92vw; background:linear-gradient(180deg,#3b0000,#1f0000); border:2px solid rgba(255,80,80,0.14);
+    padding:20px; border-radius:12px; box-shadow:0 10px 40px rgba(0,0,0,0.7); color:#ffecec; text-align:center;
+    animation: pulse 1s infinite;
+  }
+  .dangerBox h2{margin:0 0 8px 0; color: #ffb3b3;}
+  .dangerBox p{margin:0 0 14px 0; color:#ffdcdc;}
+  @keyframes pulse{0%{transform:scale(1)}50%{transform:scale(1.02)}100%{transform:scale(1)}}
+
+  .smallMuted{font-size:12px;color:#9fb7d0;}
+  footer{margin-top:16px; font-size:12px; color:#9fb7d0; text-align:center;}
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="title">
+        <div class="logo">DT</div>
+        <div>
+          <h1>Digital Twin — Windmill Monitoring</h1>
+          <p class="sub">Real-time visualization · predictive maintenance · 3D twin · alerting</p>
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div class="smallMuted">Status:</div>
+        <div id="topStatus" style="font-weight:700;color:#00ffcc">Initializing...</div>
+      </div>
+    </header>
+
+    <div class="top-row">
+      <div class="left-col">
+        <div class="card">
+          <div class="stats">
+            <div class="stat"><div class="label">Temperature (°C)</div><div id="tempVal" class="val">--</div></div>
+            <div class="stat"><div class="label">Vibration (mm/s)</div><div id="vibVal" class="val">--</div></div>
+            <div class="stat"><div class="label">Speed (RPM)</div><div id="rpmVal" class="val">--</div></div>
+          </div>
+
+          <div id="chartWrap"><canvas id="mainChart" style="width:100%;height:100%"></canvas></div>
+        </div>
+      </div>
+
+      <div class="right-col">
+        <div class="card">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <div>
+              <div class="smallMuted">Predictive Risk</div>
+              <div id="predText" style="font-weight:800; font-size:18px; margin-top:6px;">Collecting data...</div>
+            </div>
+            <div style="width:110px; text-align:center;">
+              <div id="predPct" style="font-weight:800; font-size:20px;color:var(--accent)">--%</div>
+              <div class="smallMuted">confidence</div>
+            </div>
+          </div>
+
+          <div class="predictionBar" aria-hidden>
+            <div id="predictionFill" class="predictionFill"></div>
+          </div>
+
+          <div style="margin-top:12px;" class="smallMuted">Last 10 intervals trend analysis used for prediction.</div>
+        </div>
+
+        <div class="card">
+          <div class="smallMuted">3D Digital Twin</div>
+          <div id="threeWrap"></div>
+          <div class="smallMuted" style="margin-top:8px;">Color = health (green/yellow/red). Blade speed matches RPM.</div>
+        </div>
+
+        <div class="card">
+          <div class="smallMuted">Controls</div>
+          <div style="display:flex; gap:8px; margin-top:8px;">
+            <button id="btnPause" style="flex:1;padding:8px;border-radius:8px;border:none;background:#0b2030;color:#bfefff;cursor:pointer">Pause</button>
+            <button id="btnReset" style="flex:1;padding:8px;border-radius:8px;border:none;background:#112a20;color:#bfefff;cursor:pointer">Reset</button>
+          </div>
+          <div style="margin-top:10px;" class="smallMuted">Notifications: sound only on Danger. Prediction active after 10 readings.</div>
+        </div>
+      </div>
+    </div>
+
+    <footer>© Digital Twin — Demo · Replace simulation with real sensors/MQTT for production</footer>
+  </div>
+
+  <!-- danger overlay -->
+  <div id="dangerOverlay" class="dangerOverlay">
+    <div class="dangerBox">
+      <h2>⚠️ CRITICAL ALERT</h2>
+      <p id="dangerMsg">Machine in danger — immediate attention required.</p>
+      <div style="margin-top:12px;">
+        <button id="ackBtn" style="padding:8px 12px;border-radius:8px;border:none;background:#ff5a5a;color:#fff;cursor:pointer">Acknowledge</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- sounds -->
+  <audio id="dangerSound" loop>
+    <source src="https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg" type="audio/ogg">
+  </audio>
+
+<script>
+/* =========================
+   Simulation + Core Logic
+   ========================= */
+
+let running = true;
+let intervalMs = 2000;           // update every 2s
+const maxPoints = 20;
+
+// data buffers
+const tempBuf = [];
+const vibBuf  = [];
+const rpmBuf  = [];
+const timeBuf = [];
+
+// thresholds (tweakable)
+const thresholds = {
+  tempWarn: 80, tempDanger: 95,
+  vibWarn: 12,  vibDanger: 18,
+  rpmWarn: 1800, rpmDanger: 2200
+};
+
+// UI refs
+const tempEl = document.getElementById('tempVal');
+const vibEl  = document.getElementById('vibVal');
+const rpmEl  = document.getElementById('rpmVal');
+const topStatus = document.getElementById('topStatus');
+const predText = document.getElementById('predText');
+const predPct  = document.getElementById('predPct');
+const predFill = document.getElementById('predictionFill');
+const dangerOverlay = document.getElementById('dangerOverlay');
+const dangerMsg = document.getElementById('dangerMsg');
+const dangerSound = document.getElementById('dangerSound');
+const ackBtn = document.getElementById('ackBtn');
+const btnPause = document.getElementById('btnPause');
+const btnReset = document.getElementById('btnReset');
+
+ackBtn.onclick = () => { dangerOverlay.style.display = 'none'; dangerSound.pause(); dangerSound.currentTime = 0; };
+btnPause.onclick = () => { running = !running; btnPause.textContent = running ? 'Pause' : 'Resume'; };
+btnReset.onclick = () => { tempBuf.length=0; vibBuf.length=0; rpmBuf.length=0; timeBuf.length=0; updateChart(); update3D(0,0,0,'safe'); predText.textContent='Collecting data...'; predPct.textContent='--%'; predFill.style.width='0%'; };
+
+/* =========================
+   Chart.js — one combined chart
+   ========================= */
+const ctx = document.getElementById('mainChart').getContext('2d');
+const mainChart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: timeBuf,
+    datasets: [
+      { label:'Temperature (°C)', data: tempBuf, borderColor:'#ff6b6b', borderWidth:2, yAxisID:'y' },
+      { label:'Vibration (mm/s)', data: vibBuf, borderColor:'#ffd166', borderWidth:2, yAxisID:'y2' },
+      { label:'Speed (RPM)', data: rpmBuf, borderColor:'#6fe7ff', borderWidth:2, yAxisID:'y3' }
+    ]
+  },
+  options: {
+    animation:false,
+    responsive:true,
+    maintainAspectRatio:false,
+    scales:{
+      x:{ ticks:{ color:'#b6d7ef' } },
+      y:{
+        type:'linear', position:'left', title:{display:true,text:'Temp °C'}, beginAtZero:true, ticks:{color:'#ff6b6b'}
+      },
+      y2:{
+        type:'linear', position:'right', title:{display:true,text:'Vibration'}, beginAtZero:true, grid:{drawOnChartArea:false}, ticks:{color:'#ffd166'}
+      },
+      y3:{
+        type:'linear', position:'right', title:{display:true,text:'RPM'}, beginAtZero:true, grid:{drawOnChartArea:false}, ticks:{color:'#6fe7ff', max:3000}, offset:true
+      }
+    },
+    plugins:{
+      legend:{ labels:{ color:'#cfefff' } }
+    }
+  }
+});
+
+function updateChart(){
+  mainChart.data.labels = timeBuf.slice();
+  mainChart.data.datasets[0].data = tempBuf.slice();
+  mainChart.data.datasets[1].data = vibBuf.slice();
+  mainChart.data.datasets[2].data = rpmBuf.slice();
+  mainChart.update();
+}
+
+/* =========================
+   3D Windmill (Three.js)
+   ========================= */
+const threeWrap = document.getElementById('threeWrap');
+const WIDTH = threeWrap.clientWidth || 360;
+const HEIGHT = 340;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, WIDTH/HEIGHT, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+renderer.setSize(WIDTH, HEIGHT);
+threeWrap.appendChild(renderer.domElement);
+
+// ground & ambient
+const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+scene.add(ambient);
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(5,10,7); scene.add(dir);
+
+// tower
+const towerMat = new THREE.MeshStandardMaterial({ color:0x9fb7c9, metalness:0.2, roughness:0.6 });
+const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.35,4,20), towerMat);
+tower.position.y = 2; scene.add(tower);
+
+// nacelle (box)
+const nacelleMat = new THREE.MeshStandardMaterial({ color:0xdfeff6, metalness:0.3 });
+const nacelle = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.3,0.6), nacelleMat);
+nacelle.position.y = 4.1; nacelle.position.x = 0; scene.add(nacelle);
+
+// hub (where blades attach)
+const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.3,16), new THREE.MeshStandardMaterial({color:0x223344}));
+hub.rotation.x = Math.PI/2;
+hub.position.set(0,4.1,0.45);
+scene.add(hub);
+
+// blades group
+const bladesGroup = new THREE.Group();
+const bladeMat = new THREE.MeshStandardMaterial({ color:0x00ff99, metalness:0.2, roughness:0.7 });
+for(let i=0;i<3;i++){
+  const b = new THREE.Mesh(new THREE.BoxGeometry(0.08,2.2,0.25), bladeMat);
+  b.position.y = 1.1; // pivot offset
+  b.position.x = 0;
+  b.rotation.z = i*(2*Math.PI/3);
+  const bladeRoot = new THREE.Group();
+  bladeRoot.add(b);
+  bladeRoot.position.copy(hub.position);
+  bladesGroup.add(bladeRoot);
+}
+scene.add(bladesGroup);
+
+// slight ground plane
+const plane = new THREE.Mesh(new THREE.PlaneGeometry(10,10), new THREE.MeshStandardMaterial({color:0x071026,opacity:0.2,transparent:true}));
+plane.rotation.x = -Math.PI/2; plane.position.y = 0; scene.add(plane);
+
+camera.position.set(0,3.5,9);
+camera.lookAt(0,3.5,0);
+
+let bladesSpeed = 0.06;
+
+function renderLoop(){
+  requestAnimationFrame(renderLoop);
+  // rotate the blades group's children around hub: rotate each child around Z
+  bladesGroup.children.forEach(ch => ch.rotation.z += bladesSpeed);
+  renderer.render(scene, camera);
+}
+renderLoop();
+
+/* =========================
+   Prediction logic & alerting
+   ========================= */
+
+function trendValue(buf){
+  // returns normalized slope magnitude of last 10 points
+  if(buf.length < 10) return 0;
+  const last10 = buf.slice(-10);
+  const firstAvg = last10.slice(0,5).reduce((a,b)=>a+b,0)/5;
+  const lastAvg = last10.slice(5,10).reduce((a,b)=>a+b,0)/5;
+  const slope = lastAvg - firstAvg;
+  return slope;
+}
+
+function computePrediction(){
+  // uses temp & vib trends and RPM instability to produce 0..100% risk
+  if(tempBuf.length < 10) return {pct:0, label:'Collecting data...'};
+
+  const tSlope = trendValue(tempBuf);   // °C per window
+  const vSlope = trendValue(vibBuf);    // mm/s per window
+  // rpm volatility
+  const rpmStd = (()=>{ if(rpmBuf.length<10) return 0; const s = rpmBuf.slice(-10); const mean = s.reduce((a,b)=>a+b,0)/s.length; const variance = s.reduce((a,b)=>a+(b-mean)*(b-mean),0)/s.length; return Math.sqrt(variance); })();
+
+  // heuristic: bigger slopes & volatility raise risk
+  let score = 0;
+  score += Math.max(0, Math.min(25, (tSlope/6)*25)); // temp slope weight
+  score += Math.max(0, Math.min(25, (vSlope/3)*25)); // vib slope weight
+  score += Math.max(0, Math.min(25, (rpmStd/200)*25)); // rpm volatility
+  // also absolute thresholds add risk
+  const currTemp = tempBuf[tempBuf.length-1] || 0;
+  const currVib  = vibBuf[vibBuf.length-1]  || 0;
+  if(currTemp > thresholds.tempWarn) score += 12;
+  if(currTemp > thresholds.tempDanger) score += 18;
+  if(currVib > thresholds.vibWarn) score += 12;
+  if(currVib > thresholds.vibDanger) score += 18;
+
+  score = Math.min(100, Math.round(score));
+  let label='Safe';
+  if(score >= 75) label = 'High Risk';
+  else if(score >= 40) label = 'Warning';
+  else label = 'Safe';
+  return {pct:score, label};
+}
+
+/* =========================
+   Main simulation step
+   ========================= */
+function stepSimulation(){
+  if(!running) return;
+
+  // Simulate values (you can replace this block to read real sensor inputs)
+  const temp = +(60 + Math.random()*45).toFixed(1);      // 60..105°C
+  const vib  = +(3 + Math.random()*18).toFixed(2);       // 3..21 mm/s
+  const rpm  = Math.round(1200 + Math.random()*1400);   // 1200..2600 RPM
+  const ts   = new Date().toLocaleTimeString();
+
+  // update buffers
+  timeBuf.push(ts); tempBuf.push(temp); vibBuf.push(vib); rpmBuf.push(rpm);
+  if(timeBuf.length > maxPoints){ timeBuf.shift(); tempBuf.shift(); vibBuf.shift(); rpmBuf.shift(); }
+
+  // update UI numbers
+  tempEl.textContent = temp + ' °C';
+  vibEl.textContent  = vib + ' mm/s';
+  rpmEl.textContent  = rpm + ' RPM';
+
+  // update 3D (speed + color)
+  update3D(temp, vib, rpm);
+
+  // update chart
+  updateChart();
+
+  // prediction
+  const pred = computePrediction();
+  if(tempBuf.length < 10){
+    predText.textContent = `Collecting data (${tempBuf.length}/10)...`;
+    predPct.textContent = '--%';
+    predFill.style.width = '0%';
+  } else {
+    predText.textContent = pred.label;
+    predPct.textContent = pred.pct + '%';
+    predFill.style.width = pred.pct + '%';
+    // color of fill: green->yellow->red
+    if(pred.pct >= 75) predFill.style.background = 'linear-gradient(90deg,#ff7a5f,#ff3b30)';
+    else if(pred.pct >= 40) predFill.style.background = 'linear-gradient(90deg,#ffd166,#ffb300)';
+    else predFill.style.background = 'linear-gradient(90deg,#6ee7b7,#00c853)';
+  }
+
+  // danger detection (strict thresholds)
+  const isDanger = (temp > thresholds.tempDanger) || (vib > thresholds.vibDanger) || (rpm > thresholds.rpmDanger);
+  const isWarning = (temp > thresholds.tempWarn) || (vib > thresholds.vibWarn) || (rpm > thresholds.rpmWarn);
+
+  // set top status
+  if(isDanger){ topStatus.textContent = 'DANGER'; topStatus.style.color = 'var(--danger)'; showDangerOverlay(`Danger: temp ${temp}°C | vib ${vib} | rpm ${rpm}`); }
+  else if(isWarning){ topStatus.textContent = 'Warning'; topStatus.style.color = 'var(--warn)'; hideDangerOverlay(); }
+  else { topStatus.textContent = 'Normal'; topStatus.style.color = '#00c853'; hideDangerOverlay(); }
+
+  // play danger sound if danger (loop)
+  if(isDanger){
+    if(dangerSound.paused) dangerSound.play().catch(()=>{/* user gesture may be required to enable audio — will try again on next danger */});
+  } else {
+    if(!dangerSound.paused){ dangerSound.pause(); dangerSound.currentTime = 0; }
+  }
+}
+
+/* =========================
+   3D update helper: color+speed
+   ========================= */
+function update3D(temp, vib, rpm){
+  // rotation speed scaled from rpm
+  const rpmScaled = Math.min(0.45, Math.max(0.01, rpm / 8000)); // clamp to [0.01,0.45]
+  bladesSpeed = rpmScaled;
+
+  // color decision
+  const danger = (temp > thresholds.tempDanger) || (vib > thresholds.vibDanger) || (rpm > thresholds.rpmDanger);
+  const warn = (temp > thresholds.tempWarn) || (vib > thresholds.vibWarn) || (rpm > thresholds.rpmWarn);
+  let hex = 0x00ff99;
+  if(danger) hex = 0xff3b30;
+  else if(warn) hex = 0xffb300;
+  else hex = 0x00e676;
+
+  // apply color to materials
+  tower.material.color.setHex(hex);
+  nacelle.material.color.setHex(hex === 0x00e676 ? 0xdfeff6 : (hex === 0xffb300 ? 0xfff4e0 : 0x331111));
+  bladeMat.color.setHex(hex);
+}
+
+/* =========================
+   Danger overlay controls
+   ========================= */
+function showDangerOverlay(msg){
+  dangerOverlay.style.display = 'flex';
+  dangerMsg.textContent = msg;
+}
+function hideDangerOverlay(){
+  // do not auto-hide if currently shown and danger persists; overlay will be hidden on ack
+  if(dangerOverlay.style.display === 'flex' && dangerSound.paused) dangerOverlay.style.display = 'none';
+}
+
+/* =========================
+   Start loop
+   ========================= */
+stepSimulation(); // initial
+const simTimer = setInterval(stepSimulation, intervalMs);
+
+</script>
+</body>
+</html>
